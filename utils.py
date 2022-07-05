@@ -24,10 +24,15 @@ class Network:
         return [c.advertise_keys() for c in self.clients]
 
     def share_keys(self, keylist):
-        return [c.share_keys(keylist) for c in self.clients]
+        return {c.id: c.share_keys(keylist) for c in self.clients}
 
     def masked_input_collection(self, euvs):
-        return [c.masked_input_collection(euvs) for c in self.clients]
+        masked_inputs, losses = [], []
+        for c in self.clients:
+            mi, l = c.masked_input_collection(euvs[c.id])
+            masked_inputs.append(mi)
+            losses.append(l)
+        return masked_inputs, losses
 
     def unmasking(self):
         svus, bvus = [], []
@@ -36,6 +41,10 @@ class Network:
             svus.append(svu)
             bvus.append(bvu)
         return svus, bvus
+
+    def send_grads(self, grads):
+        for c in self.clients:
+            c.receive_grads(grads)
 
 
 def lda(labels, nclients, nclasses, rng, alpha=0.5):
@@ -76,17 +85,6 @@ class DataIter:
         self.classes = classes
         self.rng = rng
 
-    def filter(self, filter_fn):
-        idx = filter_fn(self.Y)
-        self.X, self.Y = self.X[idx], self.Y[idx]
-        self.len = len(self.Y)
-        return self
-
-    def map(self, map_fn):
-        self.X, self.Y = map_fn(self.X, self.Y)
-        self.len = len(self.Y)
-        return self
-
     def __iter__(self):
         """Return this as an iterator."""
         return self
@@ -113,15 +111,7 @@ class Dataset:
         self.classes = len(np.union1d(np.unique(ds['train']['Y']), np.unique(ds['test']['Y'])))
         self.input_shape = ds['train'][0]['X'].shape
 
-    def get_iter(
-        self,
-        split,
-        batch_size=None,
-        idx=None,
-        filter_fn=None,
-        map_fn=None,
-        rng=np.random.default_rng()
-    ) -> DataIter:
+    def get_iter(self, split, batch_size=None, idx=None, rng=np.random.default_rng()) -> DataIter:
         """
         Generate an iterator out of the dataset.
         
@@ -129,14 +119,8 @@ class Dataset:
         - split: the split to use, either "train" or "test"
         - batch_size: the batch size
         - idx: the indices to use
-        - filter: a function that takes the labels and returns whether to keep the sample
-        - map: a function that takes the samples and labels and returns a subset of the samples and labels
         - rng: the random number generator
         """
-        if filter_fn is not None:
-            ds.filter(filter_fn)
-        if map_fn is not None:
-            ds.map(map_fn)
         X, Y = self.ds[split]['X'], self.ds[split]['Y']
         if idx is not None:
             X, Y = X[idx], Y[idx]

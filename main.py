@@ -72,7 +72,8 @@ if __name__ == "__main__":
         network.add_client(client.Client(i, params, optax.sgd(0.1), loss(model.clone()), d))
     server = server.Server(network, params)
     for r in (p := tqdm.trange(3750)):
-        server.step()
+        loss = server.step()
+        p.set_postfix_str(f"LOSS: {loss:.3f}")
     # print(
     #     f"Test loss: {loss(model)(server.params, *next(test_eval)):.3f}, Test accuracy: {accuracy(model, server.params, *next(test_eval)):.3%}"
     # )

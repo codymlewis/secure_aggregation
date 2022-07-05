@@ -28,8 +28,8 @@ class Client:
         self.params_len = len(ravelled_params)
         self.R = R
 
-    def receive_grads(grads):
-        self.params = self.unraveller(utils.ravel(self.params) + decode(grads))
+    def receive_grads(self, grads):
+        self.params = self.unraveller(utils.ravel(self.params) - decode(grads))
 
     def advertise_keys(self):
         return self.c.gen_public_key(), self.s.gen_public_key()
@@ -42,8 +42,8 @@ class Client:
         e = []
         for (v, (cv, _)), ss, bs in zip(keylist.items(), s_shares, b_shares):
             k = self.c.gen_shared_key(cv)
-            eu = encrypt_and_digest(bytes(self.id), k)
-            ev = encrypt_and_digest(bytes(v), k)
+            eu = encrypt_and_digest(self.id.to_bytes(16, 'big'), k)
+            ev = encrypt_and_digest(v.to_bytes(16, 'big'), k)
             ess = encrypt_and_digest(ss[1], k)
             ebs = encrypt_and_digest(bs[1], k)
             e.append((eu, ev, ess, ebs))
@@ -62,29 +62,28 @@ class Client:
                     puv = -puv
             puvs.append(puv)
         pu = jax.random.randint(jax.random.PRNGKey(self.b), (self.params_len,), 0, self.R)
-        return encode(self.step()) + pu + sum(puv)
+        x, loss = self.step()
+        return encode(x) + pu + sum(puv), loss
 
     def step(self):
         params = self.params
         for e in range(self.epochs):
             X, y = next(self.data)
             self.params, self.opt_state, loss = self._train_step(self.params, self.opt_state, X, y)
-        return utils.gradient(params, self.params)
+        return utils.gradient(params, self.params), loss
 
     def unmasking(self):
         svu = []
         bvu = []
-        for v, evus in enumerate(self.e):
-            if self.id != v:
-                k = self.c.gen_shared_key(self.keylist[v][0])
-                for (ev, eu, ess, ebs) in evus:
-                    vprime = decrypt_and_verify(ev, k)
-                    uprime = decrypt_and_verify(eu, k)
-                    # if u != uprime and v != vprime
-                    #    abort
-                    # for our case we take it as all clients make it to round 3
-                    # svu.append(cipher.decrypt_and_verify(*ss))
-                    bvu.append(cipher.decrypt_and_verify(bs, k))
+        for v, (eu, ev, ess, ebs) in enumerate(self.e):
+            k = self.c.gen_shared_key(self.keylist[v][0])
+            uprime = int.from_bytes(decrypt_and_verify(eu, k), 'big')
+            vprime = int.from_bytes(decrypt_and_verify(ev, k), 'big')
+            if self.id != uprime or v != vprime:
+                raise AssertionError(f"Decrypted u, v values do not match the truth: {(self.id, v)} vs. {(uprime, vprime)}")
+            # for our case we take it as all clients make it to round 3
+            # svu.append(cipher.decrypt_and_verify(*ss))
+            bvu.append((v + 1, decrypt_and_verify(ebs, k)))
         return svu, bvu
 
 
@@ -100,17 +99,17 @@ def train_step(opt, loss):
     return _apply
 
 def encrypt_and_digest(p, k):
-    return AES.new(k, AES.MODE_EAX).encrypt_and_digest(p)
+    return AES.new(k, AES.MODE_EAX, nonce=b'secagg').encrypt_and_digest(p)
 
 
 def decrypt_and_verify(ct, k):
-    return AES.new(k, AES.MODE_EAX).decrypt_and_verify(*ct)
+    return AES.new(k, AES.MODE_EAX, nonce=b'secagg').decrypt_and_verify(*ct)
 
 @jax.jit
 def encode(grad):
-    return jnp.round(grad * 10_000)
+    return jnp.round(grad * 1e10)
 
 
 @jax.jit
 def decode(grad):
-    return grad / 10_000
+    return grad / 1e10
