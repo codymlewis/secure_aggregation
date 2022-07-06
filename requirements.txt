@@ -1,0 +1,6 @@
+datasets
+einops
+optax
+tqdm
+pyseltongue
+pycryptodome

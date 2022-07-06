@@ -10,6 +10,9 @@ import tqdm
 import client
 import server
 import utils
+import networklib
+import datalib
+
 
 class LeNet(nn.Module):
 
@@ -59,21 +62,23 @@ def load_dataset():
 
 if __name__ == "__main__":
     num_clients = 10
-    dataset = utils.Dataset(load_dataset())
+    dataset = datalib.Dataset(load_dataset())
     batch_sizes = [32 for _ in range(num_clients)]
-    data = dataset.fed_split(batch_sizes, utils.lda)
+    data = dataset.fed_split(batch_sizes, datalib.lda)
     test_eval = dataset.get_iter("test", 10_000)
-
     model = LeNet()
     params = model.init(jax.random.PRNGKey(42), np.zeros((32,) + dataset.input_shape))
 
-    network = utils.Network()
+    network = networklib.Network()
     for i, d in enumerate(data):
         network.add_client(client.Client(i, params, optax.sgd(0.1), loss(model.clone()), d))
     server = server.Server(network, params)
-    for r in (p := tqdm.trange(3750)):
-        loss = server.step()
-        p.set_postfix_str(f"LOSS: {loss:.3f}")
-    # print(
-    #     f"Test loss: {loss(model)(server.params, *next(test_eval)):.3f}, Test accuracy: {accuracy(model, server.params, *next(test_eval)):.3%}"
-    # )
+    for r in (p := tqdm.trange(100)):
+        server.step()
+        if r % 10 == 0:
+            loss_val = server.analysis()
+            p.set_postfix_str(f"LOSS: {loss_val:.3f}")
+    print("Test loss: {:.3f}, Test accuracy: {:.3%}".format(
+        loss(model)(network.clients[0].params, *next(test_eval)),
+        accuracy(model, network.clients[0].params, *next(test_eval))
+    ))
