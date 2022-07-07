@@ -71,7 +71,12 @@ if __name__ == "__main__":
 
     network = networklib.Network()
     for i, d in enumerate(data):
-        network.add_client(client.Client(i, params, optax.sgd(0.1), loss(model.clone()), d))
+        network.add_client(
+            client.Client(
+                i, params, optax.sgd(0.1), loss(model.clone()), d,
+                t=2*num_clients // 3 + 1  # Minimum theshold for server client collusion
+            )
+        )
     server = server.Server(network, params)
     for r in (p := tqdm.trange(100)):
         server.step()
