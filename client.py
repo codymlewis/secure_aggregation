@@ -38,8 +38,8 @@ class Client:
         params = self.params
         for e in range(self.epochs):
             X, y = next(self.data)
-            self.params, self.opt_state = self._train_step(self.params, self.opt_state, X, y)
-        return utils.gradient(params, self.params)
+            params, self.opt_state = self._train_step(params, self.opt_state, X, y)
+        return utils.gradient(self.params, params)
 
     def receive_grads(self, grads):
         self.params = self.unraveller(utils.ravel(self.params) - grads)
